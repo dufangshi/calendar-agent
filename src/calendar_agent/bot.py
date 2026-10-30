@@ -238,8 +238,30 @@ def relay_agent_replies(conn, bot: Bot, cfg: Config) -> int:
     return len(replies)
 
 
+def _enrollment(cfg: Config, secrets: Secrets) -> dict:
+    """Bot token set, owner not yet: tell each private sender their user id, nothing else."""
+    bot = bot_for(secrets)
+    conn = store.connect()
+    try:
+        updates = bot.updates(store.get(conn, "tgOffset"), 20)
+    except TelegramError as exc:
+        return {"telegram": "error", "error": str(exc)}
+    for update in updates:
+        store.put(conn, "tgOffset", update["update_id"] + 1)
+        message = update.get("message") or {}
+        if message.get("chat", {}).get("type") == "private" and message.get("from"):
+            user = message["from"]["id"]
+            bot.send(
+                user,
+                f"你的 Telegram user id 是 <code>{user}</code>。\n把这个数字发给 Pockymoe 里的日程管家，它会把你设为唯一能使用这个机器人的人。",
+            )
+    return {"telegram": "enrolling", "seen": len(updates)}
+
+
 def tick(cfg: Config, wait: int = 45) -> dict:
     secrets = Secrets.load()
+    if secrets.telegram_bot_token and not cfg.telegram_owner_id:
+        return _enrollment(cfg, secrets)
     if not configured(cfg, secrets):
         return {"telegram": "notConfigured"}
     bot = bot_for(secrets)

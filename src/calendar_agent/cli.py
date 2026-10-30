@@ -217,7 +217,10 @@ def cmd_config(args: argparse.Namespace) -> int:
         if args.key not in EDITABLE:
             print(f"只能修改: {', '.join(EDITABLE)}", file=sys.stderr)
             return 1
-        setattr(cfg, args.key, args.value)
+        value = args.value or ""
+        if args.key == "telegram_owner_id":
+            value = int(value)
+        setattr(cfg, args.key, value)
         cfg.save()
     for key in (
         "apple_id",
@@ -228,6 +231,72 @@ def cmd_config(args: argparse.Namespace) -> int:
         "agent_model",
     ):
         print(f"{key} = {getattr(cfg, key)}")
+    return 0
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    """Conversation-driven setup; secrets come on stdin and are verified first."""
+    from . import setup
+
+    try:
+        if args.op == "missing":
+            gaps = setup.missing()
+            if not gaps:
+                print("都配置好了")
+            for gap in gaps:
+                print(f"- {gap['item']}: {gap['how']}")
+            return 0
+        if args.op == "caldav":
+            print(setup.set_caldav_password(sys.stdin.read()))
+        elif args.op == "telegram-token":
+            print(setup.set_telegram_token(sys.stdin.read()))
+        elif args.op == "reminders-account":
+            print(f"已识别并保存：{setup.detect_reminders_account()}")
+        elif args.op == "icloud-start":
+            print(
+                json.dumps(
+                    setup.start_icloud_login(sys.stdin.read()), ensure_ascii=False
+                )
+            )
+        elif args.op == "icloud-code":
+            print(
+                json.dumps(
+                    setup.submit_icloud_code(args.value or ""), ensure_ascii=False
+                )
+            )
+        elif args.op == "icloud-status":
+            print(json.dumps(setup.auth_status(), ensure_ascii=False))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_slack(args: argparse.Namespace) -> int:
+    """Slack (read-only) through Slack's MCP server."""
+    from . import slack
+
+    try:
+        if args.op == "auth-url":
+            print(slack.auth_url())
+        elif args.op == "auth-finish":
+            print(json.dumps(slack.auth_finish(sys.stdin.read()), ensure_ascii=False))
+        elif args.op == "status":
+            print(json.dumps(slack.status(), ensure_ascii=False))
+        elif args.op == "tools":
+            for tool in slack.Mcp().tools():
+                ro = (tool.get("annotations") or {}).get("readOnlyHint") is True
+                print(
+                    f"{'R' if ro else 'W'} {tool['name']}: {(tool.get('description') or '')[:100]}"
+                )
+        elif args.op == "call":
+            arguments = json.loads(sys.stdin.read() or "{}")
+            print(
+                json.dumps(slack.Mcp().call(args.tool, arguments), ensure_ascii=False)
+            )
+    except slack.SlackError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     return 0
 
 
@@ -287,6 +356,25 @@ def main() -> int:
     p.add_argument("key", nargs="?")
     p.add_argument("value", nargs="?")
     p.set_defaults(func=cmd_config)
+    p = sub.add_parser("setup", help="（对话线程用）检查缺失配置、保存并验证凭据")
+    p.add_argument(
+        "op",
+        choices=[
+            "missing",
+            "caldav",
+            "telegram-token",
+            "reminders-account",
+            "icloud-start",
+            "icloud-code",
+            "icloud-status",
+        ],
+    )
+    p.add_argument("value", nargs="?")
+    p.set_defaults(func=cmd_setup)
+    p = sub.add_parser("slack", help="Slack 授权与只读查询")
+    p.add_argument("op", choices=["auth-url", "auth-finish", "status", "tools", "call"])
+    p.add_argument("tool", nargs="?")
+    p.set_defaults(func=cmd_slack)
     p = sub.add_parser("status", help="各连接状态")
     p.set_defaults(func=cmd_status)
 

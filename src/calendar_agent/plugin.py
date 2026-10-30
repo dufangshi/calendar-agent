@@ -48,6 +48,17 @@ def _telegram(cfg: Config) -> dict:
     return _item("Telegram 机器人", "ok", f"只接受 user id {cfg.telegram_owner_id}")
 
 
+def _slack() -> dict:
+    from . import slack
+
+    state = slack.status()
+    if state["state"] == "notConfigured":
+        return _not_configured("Slack")
+    if state["state"] != "ok":
+        return _item("Slack", "needs_reauth", "授权已过期")
+    return _item("Slack", "ok", f"{state.get('team') or ''} · 只读")
+
+
 def status(cfg: Config) -> dict:
     if not cfg.apple_id:
         return {
@@ -87,7 +98,7 @@ def status(cfg: Config) -> dict:
                     _telegram(cfg),
                     _not_configured("Google 日历"),
                     _not_configured("Outlook 日历"),
-                    _not_configured("Slack"),
+                    _slack(),
                 ],
             },
         ],

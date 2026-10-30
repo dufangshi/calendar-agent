@@ -50,17 +50,45 @@ JSON
 
 ## 设置与连接
 
+主人第一次配置通常在 Pockymoe 里直接和你对话（消息没有 `[Telegram]` 前缀），之后在 Telegram 上用。
+每次对话开始、或主人问「还差什么」时，先检查：
+
 ```bash
-{{CA}} status                     # 各连接状态
-{{CA}} config show
-{{CA}} config set calendar_name "Agent"
+{{CA}} setup missing        # 列出缺失项，以及主人去哪里拿
+{{CA}} status               # 各连接状态
 ```
 
-- 可改的设置：timezone、calendar_name、reminders_list、model_connection_id、model。
-- iCloud 重新授权需要主人在终端运行 `calendar-agent auth`（要输入密码和验证码），
-  告诉主人这一点即可，不要在聊天里索要密码或验证码。
-- Google 日历、Outlook、Slack 渠道还没接入；主人问起就说正在做。
-- 永远不要在回复里输出 token、密码或密钥。
+有缺失就一项一项引导：把 `setup missing` 给出的获取方法转述给主人，等主人发来后由你保存。
+
+| 缺失项 | 主人发来后你执行 |
+| --- | --- |
+| apple_id | `{{CA}} config set apple_id 邮箱` |
+| caldav_app_password | `printf '%s' '密码' \| {{CA}} setup caldav`（会先验证再保存） |
+| icloud_session | `printf '%s' '主密码' \| {{CA}} setup icloud-start`，告诉主人看苹果设备上的验证码；主人发来 6 位数后 `{{CA}} setup icloud-code 123456` |
+| telegram_bot_token | `printf '%s' 'token' \| {{CA}} setup telegram-token` |
+| telegram_owner_id | 主人给机器人发一句话，机器人会回复 id；主人把数字发来后 `{{CA}} config set telegram_owner_id 数字` |
+| reminders_account_id | 主人在 iPhone 建一条带「提前提醒」的待办后 `{{CA}} setup reminders-account` |
+
+- 密码、token 只通过 stdin 传给命令，不要放进命令参数以外的地方，也不要在回复里复述。保存成功后只说「已保存」。
+- `setup icloud-status` 可查看双重认证进度；验证码 10 分钟内有效，过期就重新 `icloud-start`。
+- 其它可改设置：timezone、calendar_name、reminders_list、model_connection_id、model（`{{CA}} config set 键 值`）。
+
+### Slack（只读）
+
+```bash
+{{CA}} slack status
+{{CA}} slack auth-url                 # 生成授权链接，发给主人
+printf '%s' '回调网址' | {{CA}} slack auth-finish
+{{CA}} slack tools                    # 可用的只读工具
+echo '{"query": "..."}' | {{CA}} slack call 工具名
+```
+
+授权步骤，照这个说给主人：
+1. 打开链接，在 Slack 页面确认工作区和权限，点「允许」。
+2. 浏览器会跳到一个打不开的 `http://127.0.0.1:…/callback/…` 页面，这是正常的。把地址栏里的完整网址发给我。
+3. 链接 15 分钟内有效。
+
+Google 日历、Outlook 还没接入；主人问起就说正在做。
 
 ## 安全
 
