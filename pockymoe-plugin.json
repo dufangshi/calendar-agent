@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "dufangshi.calendar-agent",
+  "name": "日程管家",
+  "version": "0.1.0",
+  "description": "把各渠道的日程和待办，经你确认后写进 iCloud 日历和提醒事项。",
+  "entry": ["uv", "run", "--quiet", "--project", ".", "calendar-agent", "plugin"],
+  "setup": ["uv", "sync", "--quiet"],
+  "actions": [
+    { "name": "tick", "description": "每分钟运行：检查授权，处理新消息", "timeoutSeconds": 120 },
+    { "name": "status", "description": "连接状态摘要", "timeoutSeconds": 60 }
+  ],
+  "schedules": [{ "action": "tick", "everySeconds": 60 }],
+  "permissions": ["pockymoeCli"],
+  "defaultSettings": {}
+}
