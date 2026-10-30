@@ -43,9 +43,24 @@ def _not_configured(label: str) -> dict:
 
 
 def _telegram(cfg: Config) -> dict:
-    if not bot.configured(cfg, Secrets.load()):
+    from .telegram import Bot, TelegramError
+
+    secrets = Secrets.load()
+    if not secrets.telegram_bot_token:
         return _not_configured("Telegram")
-    return _item("Telegram 机器人", "ok", f"只接受 user id {cfg.telegram_owner_id}")
+    try:
+        me = Bot(secrets.telegram_bot_token)._call("getMe")
+    except TelegramError as exc:
+        return _item("Telegram 机器人", "transient", f"Telegram 返回错误：{exc}")
+    if not cfg.telegram_owner_id:
+        return _item(
+            f"Telegram @{me.get('username')}", "notConfigured", "还没设置你的 user id"
+        )
+    return _item(
+        f"Telegram @{me.get('username')}",
+        "ok",
+        f"只接受 user id {cfg.telegram_owner_id}",
+    )
 
 
 def _slack() -> dict:
@@ -141,5 +156,11 @@ def main() -> int:
     if handler is None:
         print(f"unknown action {action!r}", file=sys.stderr)
         return 2
-    json.dump(handler(Config.load()), sys.stdout, ensure_ascii=False)
+    out = handler(Config.load())
+    json.dump(out, sys.stdout, ensure_ascii=False)
+    # A broken connection must show as a failed run, not a quiet success.
+    telegram = out.get("telegram") if action == "tick" else None
+    if isinstance(telegram, dict) and telegram.get("telegram") == "error":
+        print(f"Telegram: {telegram.get('error')}", file=sys.stderr)
+        return 1
     return 0
