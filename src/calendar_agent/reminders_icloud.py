@@ -113,18 +113,40 @@ def probe(cfg: Config, secrets: Secrets) -> Probe:
 
 
 def pick_list(api: PyiCloudService, name: str):
+    """The named list, else the first one (when the name is empty or gone)."""
     lists = [
         lst for lst in api.reminders.lists() if not lst.deleted and not lst.is_group
     ]
     if not lists:
-        raise SystemExit("No Reminders lists found on this account.")
-    if not name:
-        return lists[0]
+        raise RuntimeError("这个账户没有提醒事项清单")
     for lst in lists:
-        if lst.title == name:
+        if name and lst.title == name:
             return lst
-    titles = ", ".join(lst.title for lst in lists)
-    raise SystemExit(f"Reminders list {name!r} not found. Available: {titles}")
+    return lists[0]
+
+
+def list_titles(cfg: Config, secrets: Secrets, max_age: float = 3600) -> list[str]:
+    """Reminders list names for the model to choose from, cached for an hour."""
+    import time
+
+    from .config import load_state, save_state
+
+    state = load_state()
+    cached = state.get("reminderLists") or {}
+    if cached.get("titles") and time.time() - cached.get("at", 0) < max_age:
+        return cached["titles"]
+    api, _ = open_service(cfg, secrets)
+    if api is None:
+        return cached.get("titles") or []
+    titles = [
+        lst.title
+        for lst in api.reminders.lists()
+        if not lst.deleted and not lst.is_group
+    ]
+    state = load_state()
+    state["reminderLists"] = {"at": time.time(), "titles": titles}
+    save_state(state)
+    return titles
 
 
 def create_reminder(

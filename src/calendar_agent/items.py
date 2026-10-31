@@ -89,6 +89,8 @@ def normalize(raw: dict, tz: ZoneInfo) -> dict:
         }
         if raw.get("priority") in PRIORITY:
             item["priority"] = raw["priority"]
+        if raw.get("list"):
+            item["list"] = str(raw["list"]).strip()[:80]
     else:
         raise InvalidItem(f"未知类型: {kind}")
     if notes:
@@ -144,6 +146,7 @@ def card(item: dict, tz: ZoneInfo, status: str = "pending", note: str = "") -> s
     head = {
         "pending": f"{icon} {title}",
         "editing": f"{icon} {title}\n<i>✏️ 回复这条消息，说要怎么改</i>",
+        "adding": f"⏳ {title}\n<i>正在添加…</i>",
         "applied": f"✅ {title}",
         "rejected": f"<s>{e(item['title'])}</s> · 已忽略",
         "undone": f"<s>{e(item['title'])}</s> · 已撤销",
@@ -162,6 +165,8 @@ def card(item: dict, tz: ZoneInfo, status: str = "pending", note: str = "") -> s
         )
     elif item["kind"] == "reminder" and item.get("due") and not item.get("allDay"):
         lines.append("⏰ 到点提醒")
+    if item["kind"] == "reminder" and item.get("list"):
+        lines.append(f"🗂 {e(item['list'])}")
     if item.get("priority"):
         lines.append(f"优先级 {PRIORITY_TEXT[item['priority']]}")
     if item.get("notes"):
@@ -216,7 +221,7 @@ def apply(item: dict, cfg: Config) -> dict:
     api, probe = reminders_icloud.open_service(cfg, secrets)
     if api is None:
         raise RuntimeError(f"提醒事项不可用：{probe.reason}")
-    lst = reminders_icloud.pick_list(api, cfg.reminders_list)
+    lst = reminders_icloud.pick_list(api, item.get("list") or cfg.reminders_list)
     reminder = reminders_icloud.create_reminder(
         api,
         lst.id,

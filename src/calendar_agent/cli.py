@@ -194,6 +194,12 @@ def cmd_pending(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_lists(args: argparse.Namespace) -> int:
+    for title in reminders_icloud.list_titles(Config.load(), Secrets.load(), max_age=0):
+        print(title)
+    return 0
+
+
 def cmd_rules(args: argparse.Namespace) -> int:
     current = rules.load()
     if args.op == "add":
@@ -347,6 +353,8 @@ def main() -> int:
     p.set_defaults(func=cmd_upcoming)
     p = sub.add_parser("pending", help="待确认的卡片")
     p.set_defaults(func=cmd_pending)
+    p = sub.add_parser("lists", help="提醒事项清单")
+    p.set_defaults(func=cmd_lists)
     p = sub.add_parser("rules", help="长期规则 show/add/remove")
     p.add_argument("op", choices=["show", "add", "remove"])
     p.add_argument("text", nargs="*")

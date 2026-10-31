@@ -11,8 +11,8 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import pockymoe, rules
-from .config import Config
+from . import pockymoe, reminders_icloud, rules
+from .config import Config, Secrets
 
 SYSTEM = """你把用户发给日程助手的消息转成 JSON，只输出 JSON。
 现在是 {now}（{tz}，周{weekday}）。
@@ -22,10 +22,11 @@ SYSTEM = """你把用户发给日程助手的消息转成 JSON，只输出 JSON�
 {{"action":"reply","text":"..."}}  只需一句话回答，不涉及日历
 item：
 日程 {{"kind":"event","title":"","start":"YYYY-MM-DDTHH:MM","end":"可省","allDay":false,"location":"可省","notes":"可省","alertsMinutes":[15]}}
-待办 {{"kind":"reminder","title":"","due":"YYYY-MM-DDTHH:MM 或 null","allDay":false,"notes":"可省","earlyHours":[]}}
+待办 {{"kind":"reminder","title":"","due":"YYYY-MM-DDTHH:MM 或 null","allDay":false,"notes":"可省","earlyHours":[],"list":"清单名"}}
 规则：有起止时间的会议、约会、课程是日程；"提醒我做某事"、任务、截止是待办。
 时间用本地时间，不带时区。没说提醒时：日程提前 15 分钟，待办只在到点提醒。
-标题简短，用用户的语言。"""
+标题简短，用用户的语言。
+待办的 list 从主人的提醒事项清单里按内容挑最合适的一个：{lists}"""
 
 EDIT = """这是一条待确认的{kind}：
 {item}
@@ -47,7 +48,11 @@ def _json(text: str) -> dict:
 
 def _ask(cfg: Config, user: str) -> dict:
     now, tz, weekday = _now(cfg)
-    system = SYSTEM.format(now=now, tz=tz, weekday=weekday)
+    lists = (
+        "、".join(reminders_icloud.list_titles(cfg, Secrets.load()))
+        or "（未知，省略 list）"
+    )
+    system = SYSTEM.format(now=now, tz=tz, weekday=weekday, lists=lists)
     owner_rules = rules.load()
     if owner_rules:
         system += "\n主人的长期规则：\n" + "\n".join(f"- {r}" for r in owner_rules[:30])

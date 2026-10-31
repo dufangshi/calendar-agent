@@ -26,6 +26,7 @@ JSON
   `alertsMinutes` 是提前几分钟提醒，可多个；不写就是提前 15 分钟。
 - 待办：要做的事、截止。`due` 可为 null；`earlyHours` 是提前几小时再提醒一次，
   到点本身总会提醒。`priority` 可选 high / medium / low。
+  `list` 是提醒事项清单名，按内容从 `{{CA}} lists` 里挑最合适的。
 - 命令会返回每张卡片是否发出。卡片发出后，回复里一句话说明即可，例如「发了两张卡片，确认一下」。
 
 ## 查看和规划
@@ -33,6 +34,7 @@ JSON
 ```bash
 {{CA}} upcoming --days 7          # 主人所有 iCloud 日历未来几天的日程
 {{CA}} pending                    # 还没确认的卡片
+{{CA}} lists                      # 主人的提醒事项清单
 ```
 
 「帮我规划这周」这类请求：先 `upcoming` 看空档，再 propose 具体的时间块，回复里一句话说明思路。

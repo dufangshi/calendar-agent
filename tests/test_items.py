@@ -79,3 +79,11 @@ def test_dateless_reminder_and_relative_day_labels():
 def test_invalid_items(raw):
     with pytest.raises(items.InvalidItem):
         items.normalize(raw, TZ)
+
+
+def test_reminder_list_is_kept_and_shown_and_adding_has_no_buttons():
+    item = items.normalize({"kind": "reminder", "title": "交 A2", "due": "2030-01-09T17:00", "list": "学校"}, TZ)
+    assert item["list"] == "学校"
+    assert "🗂 学校" in items.card(item, TZ)
+    assert "正在添加" in items.card(item, TZ, "adding")
+    assert items.buttons("p", "adding") == []

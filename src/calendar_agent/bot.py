@@ -181,6 +181,9 @@ def _handle_callback(conn, bot: Bot, cfg: Config, query: dict) -> None:
     status = row["status"]
     if action == "a" and status in ("pending", "editing", "failed"):
         bot.answer(query["id"], "正在添加…")
+        # Visible at once; writing to iCloud takes a few seconds.
+        store.update_proposal(conn, pid, status="adding")
+        _refresh(conn, bot, cfg, pid)
         try:
             result = items.apply(json.loads(row["item"]), cfg)
         except Exception as exc:  # noqa: BLE001 - shown on the card, retry stays possible
