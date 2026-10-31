@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import time
 from zoneinfo import ZoneInfo
 
 from . import agent, extract, items, pockymoe, store
@@ -258,7 +259,28 @@ def _enrollment(cfg: Config, secrets: Secrets) -> dict:
     return {"telegram": "enrolling", "seen": len(updates)}
 
 
-def tick(cfg: Config, wait: int = 45) -> dict:
+def _handle_update(conn, bot: Bot, cfg: Config, update: dict) -> bool:
+    # Advance first: a message that crashes the handler is not retried forever.
+    store.put(conn, "tgOffset", update["update_id"] + 1)
+    if not _from_owner(cfg, update):
+        return False
+    try:
+        if "callback_query" in update:
+            _handle_callback(conn, bot, cfg, update["callback_query"])
+        elif "message" in update:
+            _handle_text(conn, bot, cfg, update["message"])
+    except Exception as exc:
+        LOGGER.exception("update failed")
+        try:
+            bot.send(cfg.telegram_owner_id, f"⚠️ 出错了：{html.escape(str(exc)[:300])}")
+        except TelegramError:
+            pass
+    return True
+
+
+def tick(cfg: Config, budget: float = 52) -> dict:
+    """Listen for about a minute, so the next scheduled tick takes over within
+    seconds and a button press is answered right away."""
     secrets = Secrets.load()
     if secrets.telegram_bot_token and not cfg.telegram_owner_id:
         return _enrollment(cfg, secrets)
@@ -267,31 +289,18 @@ def tick(cfg: Config, wait: int = 45) -> dict:
     bot = bot_for(secrets)
     conn = store.connect()
     handled = relayed = 0
-    relayed += relay_agent_replies(conn, bot, cfg)
-    # Keep polls short while the agent is working, so its reply goes out promptly.
-    poll = 10 if store.get(conn, "agentPending") else wait
-    try:
-        updates = bot.updates(store.get(conn, "tgOffset"), poll)
-    except TelegramError as exc:
-        return {"telegram": "error", "error": str(exc)}
-    for update in updates:
-        # Advance first: a message that crashes the handler is not retried forever.
-        store.put(conn, "tgOffset", update["update_id"] + 1)
-        if not _from_owner(cfg, update):
-            continue
+    deadline = time.monotonic() + budget
+    while True:
+        relayed += relay_agent_replies(conn, bot, cfg)
+        left = int(deadline - time.monotonic())
+        if left < 2:
+            break
+        # Short polls while the agent works, so its reply goes out promptly.
+        poll = min(left, 10 if store.get(conn, "agentPending") else 45)
         try:
-            if "callback_query" in update:
-                _handle_callback(conn, bot, cfg, update["callback_query"])
-            elif "message" in update:
-                _handle_text(conn, bot, cfg, update["message"])
-            handled += 1
-        except Exception as exc:
-            LOGGER.exception("update failed")
-            try:
-                bot.send(
-                    cfg.telegram_owner_id, f"⚠️ 出错了：{html.escape(str(exc)[:300])}"
-                )
-            except TelegramError:
-                pass
-    relayed += relay_agent_replies(conn, bot, cfg)
+            updates = bot.updates(store.get(conn, "tgOffset"), poll)
+        except TelegramError as exc:
+            return {"telegram": "error", "error": str(exc), "handled": handled}
+        for update in updates:
+            handled += _handle_update(conn, bot, cfg, update)
     return {"telegram": "ok", "handled": handled, "relayed": relayed}
