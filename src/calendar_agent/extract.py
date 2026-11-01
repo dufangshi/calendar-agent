@@ -26,6 +26,10 @@ item：
 规则：有起止时间的会议、约会、课程是日程；"提醒我做某事"、任务、截止是待办。
 时间用本地时间，不带时区。没说提醒时：日程提前 15 分钟，待办只在到点提醒。
 标题简短，用用户的语言。
+「最近的对话」是上下文：「上面」「刚才」「这个」指的就是它。附图按「图片 N」编号，
+可能是课表、排班表、海报、聊天截图：主人自报身份（如名字）时，只提取属于主人的时段，
+每个时段一条日程；图里的日期按周几换算成具体日期；起止时间按表格里该格的时间，
+不要默认 1 小时，相邻且同一事项的格子合并成一段。
 待办的 list 从主人的提醒事项清单里按内容挑最合适的一个：{lists}"""
 
 EDIT = """这是一条待确认的{kind}：
@@ -46,7 +50,7 @@ def _json(text: str) -> dict:
     return json.loads(match.group(0))
 
 
-def _ask(cfg: Config, user: str) -> dict:
+def _ask(cfg: Config, user: str, images: list[dict] | None = None) -> dict:
     now, tz, weekday = _now(cfg)
     lists = (
         "、".join(reminders_icloud.list_titles(cfg, Secrets.load()))
@@ -58,10 +62,11 @@ def _ask(cfg: Config, user: str) -> dict:
         system += "\n主人的长期规则：\n" + "\n".join(f"- {r}" for r in owner_rules[:30])
     text = pockymoe.complete(
         cfg.model_connection_id,
-        cfg.model,
+        (cfg.vision_model or cfg.model) if images else cfg.model,
         system,
         user,
-        max_tokens=800,
+        max_tokens=2000,
+        images=images,
     )
     result = _json(text)
     if result.get("action") not in ("propose", "agent", "reply"):
@@ -73,8 +78,13 @@ def enabled(cfg: Config) -> bool:
     return bool(cfg.model_connection_id) and pockymoe.available()
 
 
-def message(cfg: Config, text: str) -> dict:
-    return _ask(cfg, text)
+def message(
+    cfg: Config, text: str, context: str = "", images: list[dict] | None = None
+) -> dict:
+    prompt = (
+        f"最近的对话（旧→新）：\n{context}\n\n当前消息：{text}" if context else text
+    )
+    return _ask(cfg, prompt, images)
 
 
 def edit(cfg: Config, item: dict, text: str) -> dict:

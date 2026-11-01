@@ -136,6 +136,7 @@ EDITABLE = (
     "reminders_list",
     "model_connection_id",
     "model",
+    "vision_model",
 )
 
 

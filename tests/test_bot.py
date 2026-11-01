@@ -7,6 +7,9 @@ import pytest
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
+    # Never reach a real Supervisor from tests.
+    monkeypatch.delenv("POCKYMOE_URL", raising=False)
+    monkeypatch.delenv("POCKYMOE_TOKEN", raising=False)
     monkeypatch.setenv("CALENDAR_AGENT_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.setenv("CALENDAR_AGENT_DATA_DIR", str(tmp_path / "data"))
     import importlib
@@ -15,9 +18,9 @@ def env(tmp_path, monkeypatch):
 
     importlib.reload(config)
     importlib.reload(store)
-    from calendar_agent import agent, bot, extract, items
+    from calendar_agent import agent, bot, conversation, extract, items
 
-    for module in (items, extract, agent, bot):
+    for module in (conversation, items, extract, agent, bot):
         importlib.reload(module)
     cfg = config.Config(
         apple_id="me@example.com", telegram_owner_id=42, model_connection_id="conn"
@@ -71,7 +74,7 @@ def test_message_becomes_card_and_approve_writes_then_undo(env):
     mp.setattr(
         extract,
         "message",
-        lambda c, t: {
+        lambda c, t, *a: {
             "action": "propose",
             "items": [{"kind": "event", "title": "组会", "start": "2030-01-07T14:00"}],
         },
@@ -148,9 +151,9 @@ def test_planning_goes_to_agent_and_strangers_are_ignored(env):
     fake = FakeBot()
     forwarded = []
     mp.setattr(extract, "enabled", lambda c: True)
-    mp.setattr(extract, "message", lambda c, t: {"action": "agent"})
+    mp.setattr(extract, "message", lambda c, t, *a: {"action": "agent"})
     mp.setattr(
-        agent, "forward", lambda conn, c, text, mid: forwarded.append((text, mid))
+        agent, "forward", lambda conn, c, text, mid, *a: forwarded.append((text, mid))
     )
     conn = store.connect()
     bot._handle_text(conn, fake, cfg, message("帮我规划这周", mid=9))
@@ -160,3 +163,46 @@ def test_planning_goes_to_agent_and_strangers_are_ignored(env):
         cfg, {"message": {**message("hi"), "chat": {"id": 42, "type": "group"}}}
     )
     assert bot._from_owner(cfg, {"callback_query": {"from": {"id": 42}}})
+
+
+def test_photo_then_follow_up_sends_the_picture_and_the_earlier_turns(env):
+    cfg, bot, store, _items, extract, _agent, mp = env
+    fake = FakeBot()
+    fake.download = lambda file_id: b"\xff\xd8jpeg"
+    calls = []
+
+    def fake_message(c, text, context="", images=None):
+        calls.append((text, context, images))
+        return (
+            {"action": "reply", "text": "收到"}
+            if len(calls) == 1
+            else {
+                "action": "propose",
+                "items": [
+                    {
+                        "kind": "event",
+                        "title": "CSC108 A3 OH",
+                        "start": "2030-01-07T14:00",
+                    }
+                ],
+            }
+        )
+
+    mp.setattr(extract, "enabled", lambda c: True)
+    mp.setattr(extract, "message", fake_message)
+    conn = store.connect()
+    photo = {
+        **message("我是 Fangshi", mid=20),
+        "photo": [{"file_id": "small"}, {"file_id": "big"}],
+    }
+    photo["caption"] = photo.pop("text")
+    bot._handle_text(conn, fake, cfg, photo)
+    assert calls[0][0] == "[图片 1] 我是 Fangshi" and len(calls[0][2]) == 1
+
+    bot._handle_text(
+        conn, fake, cfg, message("根据上面图中的日程，帮我添加 CSC108 A3 OH", mid=22)
+    )
+    _text, context, images = calls[1]
+    assert "主人：[图片 1] 我是 Fangshi" in context and "你：收到" in context
+    assert len(images) == 1 and images[0]["mediaType"] == "image/jpeg"
+    assert "CSC108 A3 OH" in fake.sent[-1]["text"]

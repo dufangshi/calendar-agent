@@ -68,6 +68,8 @@ class Config:
     # every message to the agent thread instead.
     model_connection_id: str = ""
     model: str = ""
+    # Used instead of `model` when the request carries images; empty: `model`.
+    vision_model: str = ""
     # Harness of the conversation thread the plugin keeps (Pockymoe provider/agent).
     agent_provider: str = "acp"
     agent_id: str = "deepseek"

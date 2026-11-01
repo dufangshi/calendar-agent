@@ -8,7 +8,7 @@ import logging
 import time
 from zoneinfo import ZoneInfo
 
-from . import agent, extract, items, pockymoe, store
+from . import agent, conversation, extract, items, pockymoe, store
 from .config import Config, Secrets
 from .telegram import Bot, TelegramError
 
@@ -60,6 +60,12 @@ def send_cards(
             conn, pid, chat_id=sent["chat"]["id"], message_id=sent["message_id"]
         )
         results.append({"ok": True, "id": pid, "title": item["title"]})
+        conversation.record(
+            conn,
+            cfg.telegram_owner_id,
+            "bot",
+            f"发了确认卡片：{item['title']}（{items.when_text(item, tz)}）",
+        )
     return results
 
 
@@ -74,9 +80,17 @@ def _refresh(conn, bot: Bot, cfg: Config, pid: str, note: str = "") -> None:
     )
 
 
-def _forward(conn, bot: Bot, cfg: Config, text: str, message_id: int) -> None:
+def _forward(
+    conn,
+    bot: Bot,
+    cfg: Config,
+    text: str,
+    message_id: int,
+    context: str = "",
+    images=None,
+) -> None:
     try:
-        agent.forward(conn, cfg, text, message_id)
+        agent.forward(conn, cfg, text, message_id, context, images)
     except pockymoe.PockymoeError as exc:
         bot.send(
             cfg.telegram_owner_id,
@@ -85,12 +99,38 @@ def _forward(conn, bot: Bot, cfg: Config, text: str, message_id: int) -> None:
         )
 
 
+def _incoming_image(bot: Bot, message: dict) -> str | None:
+    """Save the photo (or image file) of a message; returns its media name."""
+    file_id, suffix = None, ".jpg"
+    if message.get("photo"):
+        file_id = message["photo"][-1]["file_id"]  # the largest size
+    document = message.get("document") or {}
+    if document.get("mime_type", "").startswith("image/"):
+        file_id = document["file_id"]
+        suffix = ".png" if document["mime_type"] == "image/png" else ".jpg"
+    if not file_id:
+        return None
+    return conversation.save_image(message["message_id"], bot.download(file_id), suffix)
+
+
+def _say(
+    conn,
+    bot: Bot,
+    cfg: Config,
+    text: str,
+    reply_to: int | None = None,
+    plain: bool = True,
+) -> None:
+    bot.send(
+        cfg.telegram_owner_id, html.escape(text) if plain else text, reply_to=reply_to
+    )
+    conversation.record(conn, cfg.telegram_owner_id, "bot", text)
+
+
 def _handle_text(conn, bot: Bot, cfg: Config, message: dict) -> None:
     text = (message.get("text") or message.get("caption") or "").strip()
     mid = message["message_id"]
-    if not text:
-        bot.send(cfg.telegram_owner_id, "目前只看得懂文字消息。", reply_to=mid)
-        return
+    chat = message["chat"]["id"]
     if text in ("/start", "/help"):
         bot.send(cfg.telegram_owner_id, HELP)
         return
@@ -109,32 +149,43 @@ def _handle_text(conn, bot: Bot, cfg: Config, message: dict) -> None:
             )
         return
     bot.typing(cfg.telegram_owner_id)
+    image = _incoming_image(bot, message)
+    if not text and not image:
+        bot.send(cfg.telegram_owner_id, "目前只看得懂文字和图片。", reply_to=mid)
+        return
+    context = conversation.recent(conn, chat, mid)
+    conversation.record(conn, chat, "owner", text, mid, image)
+    images = context.images + ([conversation.MEDIA_DIR / image] if image else [])
+    images = images[-conversation.MAX_IMAGES :]
+    shown = text or "（只发了图片）"
+    if image:
+        shown = f"[图片 {len(images)}] {text}".strip()
 
     replied = message.get("reply_to_message")
-    if replied:
-        row = store.proposal_by_message(
-            conn, message["chat"]["id"], replied["message_id"]
-        )
+    if replied and not image:
+        row = store.proposal_by_message(conn, chat, replied["message_id"])
         if row and row["status"] in ("pending", "editing", "failed"):
             _edit(conn, bot, cfg, row, text, mid)
             return
 
     if not extract.enabled(cfg):
-        _forward(conn, bot, cfg, text, mid)
+        _forward(conn, bot, cfg, shown, mid, context.transcript, images)
         return
     try:
-        result = extract.message(cfg, text)
+        result = extract.message(
+            cfg, shown, context.transcript, conversation.encoded(images)
+        )
     except Exception as exc:  # noqa: BLE001 - any model failure falls back to the agent
         LOGGER.warning("extraction failed: %s", exc)
         result = {"action": "agent"}
     if result["action"] == "propose" and result.get("items"):
         sent = send_cards(conn, bot, cfg, result["items"], "telegram", text, mid)
         if not any(r["ok"] for r in sent):
-            _forward(conn, bot, cfg, text, mid)
+            _forward(conn, bot, cfg, shown, mid, context.transcript, images)
     elif result["action"] == "reply" and result.get("text"):
-        bot.send(cfg.telegram_owner_id, html.escape(result["text"]), reply_to=mid)
+        _say(conn, bot, cfg, result["text"], mid)
     else:
-        _forward(conn, bot, cfg, text, mid)
+        _forward(conn, bot, cfg, shown, mid, context.transcript, images)
 
 
 def _edit(conn, bot: Bot, cfg: Config, row, text: str, mid: int) -> None:
@@ -238,7 +289,7 @@ def relay_agent_replies(conn, bot: Bot, cfg: Config) -> int:
         LOGGER.warning("agent poll failed: %s", exc)
         return 0
     for reply_to, text in replies:
-        bot.send(cfg.telegram_owner_id, html.escape(text[:3800]), reply_to=reply_to)
+        _say(conn, bot, cfg, text[:3800], reply_to)
     return len(replies)
 
 

@@ -37,11 +37,18 @@ def call(operation: str, timeout: float = 60, **body) -> dict:
 
 
 def complete(
-    connection_id: str, model: str, system: str, user: str, max_tokens: int = 1024
+    connection_id: str,
+    model: str,
+    system: str,
+    user: str,
+    max_tokens: int = 1024,
+    images: list[dict] | None = None,
 ) -> str:
+    extra = {"images": images} if images else {}
     return call(
         "modelComplete",
-        timeout=120,
+        timeout=180,
+        **extra,
         connectionId=connection_id,
         model=model,
         system=system,

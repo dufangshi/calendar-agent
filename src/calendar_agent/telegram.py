@@ -71,6 +71,19 @@ class Bot:
             if "message is not modified" not in str(exc):
                 raise
 
+    def download(self, file_id: str, max_bytes: int = 10 * 1024 * 1024) -> bytes:
+        """A file the owner sent (photos up to Telegram's 20 MB bot limit)."""
+        info = self._call("getFile", file_id=file_id)
+        if info.get("file_size", 0) > max_bytes:
+            raise TelegramError("getFile: file too large")
+        url = self._base.replace("/bot", "/file/bot", 1) + "/" + info["file_path"]
+        try:
+            resp = self._http.get(url, timeout=60)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            raise TelegramError(f"download: {type(exc).__name__}") from None
+        return resp.content
+
     def answer(self, callback_id: str, text: str = "") -> None:
         try:
             self._call("answerCallbackQuery", callback_query_id=callback_id, text=text)

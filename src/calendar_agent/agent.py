@@ -64,13 +64,35 @@ def ensure_thread(conn, cfg: Config) -> str:
     return thread
 
 
-def forward(conn, cfg: Config, text: str, reply_to: int) -> None:
+def forward(
+    conn,
+    cfg: Config,
+    text: str,
+    reply_to: int,
+    context: str = "",
+    images: list[Path] | None = None,
+) -> None:
     thread = ensure_thread(conn, cfg)
     sent_at = datetime.now(UTC).isoformat()
+    body = f"[Telegram] {text}"
+    if context:
+        body = f"[Telegram] 最近的对话（旧→新）：\n{context}\n\n当前消息：{text}"
+    if images:
+        # The thread works in WORKSPACE; copies there are readable with its file tools.
+        inbox = WORKSPACE / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        names = []
+        for i, path in enumerate(images, 1):
+            target = inbox / path.name
+            target.write_bytes(path.read_bytes())
+            names.append(f"图片 {i}: inbox/{path.name}")
+        body += "\n\n附图（在你的工作目录里，用读文件/看图工具打开）：\n" + "\n".join(
+            names
+        )
     pockymoe.call(
         "send",
         threadId=thread,
-        text=f"[Telegram] {text}",
+        text=body,
         delivery="queue",
         kind="task",
         subject="Telegram 消息",

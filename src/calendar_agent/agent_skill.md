@@ -73,7 +73,7 @@ JSON
 
 - 密码、token 只通过 stdin 传给命令，不要放进命令参数以外的地方，也不要在回复里复述。保存成功后只说「已保存」。
 - `setup icloud-status` 可查看双重认证进度；验证码 10 分钟内有效，过期就重新 `icloud-start`。
-- 其它可改设置：timezone、calendar_name、reminders_list、model_connection_id、model（`{{CA}} config set 键 值`）。
+- 其它可改设置：timezone、calendar_name、reminders_list、model_connection_id、model、vision_model（看图时用的模型）（`{{CA}} config set 键 值`）。
 
 ### Slack（只读）
 
@@ -91,6 +91,11 @@ echo '{"query": "..."}' | {{CA}} slack call 工具名
 3. 链接 15 分钟内有效。
 
 Google 日历、Outlook 还没接入；主人问起就说正在做。
+
+## 图片
+
+转来的消息可能带「附图」：文件在你工作目录的 `inbox/` 下，用你的读文件/看图工具打开。
+课表、排班表这类图，主人报了名字就只取主人的格子，起止时间按格子，相邻同一事项合并。
 
 ## 安全
 
