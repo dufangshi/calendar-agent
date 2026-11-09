@@ -131,9 +131,13 @@ def cmd_smoke(args: argparse.Namespace) -> int:
 
 
 EDITABLE = (
+    "apple_id",
     "timezone",
     "calendar_name",
     "reminders_list",
+    "reminders_account_id",
+    "reminders_person_id",
+    "telegram_owner_id",
     "model_connection_id",
     "model",
     "vision_model",

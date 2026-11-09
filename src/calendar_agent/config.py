@@ -60,6 +60,9 @@ class Config:
     # Reminders account UUID stamped on early reminders. It changes when the
     # iPhone is replaced. Empty: discovered from reminders the app wrote.
     reminders_account_id: str = ""
+    # Account person id stamped on Urgent (alarm) reminders; read from one the
+    # app marked Urgent. Stays the same for the account.
+    reminders_person_id: str = ""
     # Don't repeat a re-auth notification more often than this.
     notify_cooldown_hours: float = 12.0
     # Only this Telegram user (private chat) may talk to the bot.

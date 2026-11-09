@@ -95,3 +95,15 @@ def test_reminder_list_is_kept_and_shown_and_adding_has_no_buttons():
     assert "🗂 学校" in items.card(item, TZ)
     assert "正在添加" in items.card(item, TZ, "adding")
     assert items.buttons("p", "adding") == []
+
+
+def test_setup_keys_documented_for_the_agent_are_editable():
+    from calendar_agent import cli
+
+    for key in (
+        "apple_id",
+        "telegram_owner_id",
+        "reminders_account_id",
+        "reminders_person_id",
+    ):
+        assert key in cli.EDITABLE
